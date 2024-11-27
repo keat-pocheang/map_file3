@@ -508,6 +508,9 @@ class UploadForm(FlaskForm):
 def index():
     form = UploadForm()
 
+     if request.method not in ['GET', 'POST']:
+        abort(405)  # Method not allowed
+    
     if request.method == 'POST' and form.validate_on_submit():
         title = request.form.get('title', 'merged_data')
         title_2 = request.form.get('title2', 'Merged Data Subtitle')
