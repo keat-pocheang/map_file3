@@ -572,12 +572,28 @@ def index():
     merged_files = os.listdir(app.config['MERGED_FOLDER'])
     return render_template('index.html', form=form, uploaded_files=uploaded_files, merged_files=merged_files)
 
+
 @app.route('/download/<folder>/<filename>', methods=['GET'])
 def download_file(folder, filename):
+    # Get the folder path from the app config
     folder_path = app.config.get(f'{folder.upper()}_FOLDER')
+
+    if not folder_path:
+        flash("Invalid folder configuration.", "error")
+        return redirect(url_for('index'))
+
+    # Sanitize and ensure the filename is safe
+    filename = os.path.basename(filename)  # Remove directory traversal in the filename itself
     file_path = os.path.join(folder_path, filename)
-    if os.path.exists(file_path):
-        return send_from_directory(file_path)
+
+    # Ensure the file path is within the intended folder using absolute paths
+    if not os.path.abspath(file_path).startswith(os.path.abspath(folder_path)):
+        flash(f"The file {filename} is not accessible.", "error")
+        return redirect(url_for('index'))
+
+    # Check if file exists and serve it
+    if os.path.exists(file_path) and os.path.isfile(file_path):
+        return send_from_directory(folder_path, filename)
     else:
         flash(f"The file {filename} does not exist.", "error")
         return redirect(url_for('index'))
