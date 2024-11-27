@@ -10,6 +10,7 @@
     <div class="container">
         <h1>Upload xlsm Files</h1>
         <form method="POST" enctype="multipart/form-data">
+            {{ form.hidden_tag() }}
 
             <div class="form-group">
                 <label for="title">Enter Title for Generated Files:</label>
@@ -41,14 +42,18 @@
                 <button type="submit" name="download_pdf" value="true">Generate and Download PDF</button>
                 <button type="submit" name="show_data" value="true">Show Merged Data</button>
             </div>
-        </form>
-
+            <!-- Display Merged Data -->
         {% if tables %}
+        <div class="form-group">
             <h2>Merged Data</h2>
             {% for table in tables %}
                 {{ table|safe }}
             {% endfor %}
+        </div>
         {% endif %}
+        </form>
+
+
     </div>
 </body>
 </html>

@@ -1,5 +1,5 @@
 import time
-from flask import Flask,Response, render_template, request, send_file, redirect, url_for, flash, abort
+from flask import Flask,Response,send_from_directory, render_template, request, send_file, redirect, url_for, flash, abort
 import pandas as pd
 from io import BytesIO
 import os
@@ -26,6 +26,8 @@ from werkzeug.utils import secure_filename
 
 
 app = Flask(__name__)
+csrf = CSRFProtect()
+csrf.init_app(app)
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MERGED_FOLDER'] = 'merged'
 #app.secret_key = 'supersecretkey'
@@ -54,6 +56,25 @@ csp = {
 Talisman(app, content_security_policy=csp, force_https=False)
 
 
+import bleach
+
+def sanitize_html(html_content):
+    """
+    Sanitize HTML content to allow only safe table-related tags and attributes.
+    """
+    allowed_tags = ['table', 'thead', 'tbody', 'tr', 'th', 'td', 'span', 'div', 'p']
+    allowed_attributes = {
+        'table': ['class', 'style', 'border'],
+        'tr': ['class', 'style'],
+        'th': ['class', 'style', 'colspan', 'rowspan'],
+        'td': ['class', 'style', 'colspan', 'rowspan'],
+        'span': ['class', 'style'],
+        'div': ['class', 'style'],
+        'p': ['class', 'style']
+    }
+    return bleach.clean(html_content, tags=allowed_tags, attributes=allowed_attributes, strip=True)
+
+
 # Define a form class
 class UploadForm(FlaskForm):
     name = StringField('Name', validators=[DataRequired()])
@@ -62,12 +83,12 @@ class UploadForm(FlaskForm):
 
 counter = 1
 
-# 定义插入函数
+
 def insert_column(merged_df, position):
     global counter
     new_column_name = f"id{counter}_0"
-    new_column_name2 = f"column_{counter}_1"  # 第一列名称
-    new_column_name3 = f"column_{counter}_2"  # 第二列名称
+    new_column_name2 = f"column_{counter}_1"
+    new_column_name3 = f"column_{counter}_2"
     # 插入新列
     merged_df.insert(position, new_column_name3, merged_df.iloc[:, 2])
     merged_df.insert(position, new_column_name2, merged_df.iloc[:, 1])
@@ -202,12 +223,12 @@ def save_merged_file(merged_df, file_type, title, title_2, note1):
             # 创建表格布局：一行两列，左边放 logo，右边放两行文字（作为一个块）
             table_data = [[logo, text_block]]
 
-            # 创建表格并设置样式
-            table1 = Table(table_data, colWidths=[8 * inch, None])  # 调整列宽度
+
+            table1 = Table(table_data, colWidths=[8 * inch, None])
             table1.setStyle(TableStyle([
-                ('VALIGN', (0, 0), (-1, -1), 'TOP'),  # 顶部对齐
-                ('TOPPADDING', (0, 0), (-1, -1), 1 * mm),  # 顶部内边距
-                ('ALIGN', (1, 0), (1, 0), 'RIGHT'),  # 右侧文字右对齐
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('TOPPADDING', (0, 0), (-1, -1), 1 * mm),
+                ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
                 ('BOTTOMPADDING', (0, 0), (-1, -1), 0 * mm),
                 #('LEFTPADDING', (0, 0), (0, 0), 0),  # 取消左侧边距
                 #('RIGHTPADDING', (1, 0), (1, 0), 0),  # 取消右侧边距
@@ -315,15 +336,16 @@ def save_merged_file(merged_df, file_type, title, title_2, note1):
             num_row_pages = (rows // max_rows_per_page) + 1
 
             num_col_pages = len(max1)
-            print(num_col_pages)
-            print(len(max1))
 
-
+            start_row = 0
 
             for row_page in range(num_row_pages):
-                start_row = row_page * max_rows_per_page
+                # start_row = row_page * max_rows_per_page
                 if(start_row == 0):
                     start_row = 1
+                else:
+                    start_row = start_row + max_rows_per_page -1
+                print("Start row", start_row)
                 end_row = min(start_row + max_rows_per_page, rows)
                 end_col = 0
                 for col_page in range(num_col_pages):
@@ -357,7 +379,7 @@ def save_merged_file(merged_df, file_type, title, title_2, note1):
 
                     style_n = styles["BodyText"]
                     wrapped_data = []
-                    for row in page_data:   #换行
+                    for row in page_data:
                         wrapped_row = []
                         for item in row:
                             paragraph = Paragraph(str(item), style_n)
@@ -372,7 +394,7 @@ def save_merged_file(merged_df, file_type, title, title_2, note1):
                         ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
                         #('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                         #('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                        ('TOPPADDING', (0, 0), (-1, -1), 1 * mm),  # 顶部内边距
+                        ('TOPPADDING', (0, 0), (-1, -1), 1 * mm),
                         ('BOTTOMPADDING', (0, 0), (-1, -1), 0 * mm),
                         ('SPAN', (0, 0), (0, 1)),
                         ('SPAN', (1, 0), (1, 1)),
@@ -478,16 +500,20 @@ def remove_server_header(response: Response):
    response.headers["Server"] = "MyCustomServer"  # Or set to empty string to hide completely
    return response
 
+class UploadForm(FlaskForm):
+    submit = SubmitField('Upload and Merge')
+
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    if request.method == 'POST':
+    form = UploadForm()
 
-        title = request.form.get('title', 'merged_data')  # Default title if none provided
-        title_2 = request.form.get('title2', 'merged_data')  # Default title if none provided
-        note1 = request.form.get('note1', 'merged_data')  # Default title if none provided
+    if request.method == 'POST' and form.validate_on_submit():
+        title = request.form.get('title', 'merged_data')
+        title_2 = request.form.get('title2', 'Merged Data Subtitle')
+        note1 = request.form.get('note1', 'Notes for the PDF')
 
-        # 检查上传的文件
+        # Check uploaded files
         if 'users_file' in request.files and 'details_file' in request.files:
             users_file = request.files['users_file']
             details_files = request.files.getlist('details_file')
@@ -505,22 +531,20 @@ def index():
                         details_file.save(details_file_path)
                         details_file_paths.append(details_file_path)
 
-                #users_file_name = get_timestamped_filename(users_file.filename)
-                #details_file_name = get_timestamped_filename(details_file.filename)
-
+                # Merge files
                 merged_df = merge_excel(users_file_path, details_file_paths)
                 if merged_df is None:
-                    flash("Error merging xlsm files.", "error")
+                    flash("Error merging files.", "error")
                     return redirect(url_for('index'))
 
+                # Handle download options
+                buffer = BytesIO()
                 if 'download_csv' in request.form:
-                    buffer = BytesIO()
                     merged_df.to_csv(buffer, index=False)
                     buffer.seek(0)
                     return send_file(buffer, as_attachment=True, download_name='merged_data.csv', mimetype='text/csv')
 
                 elif 'download_excel' in request.form:
-                    buffer = BytesIO()
                     with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
                         merged_df.to_excel(writer, index=False, sheet_name='MergedData')
                     buffer.seek(0)
@@ -529,34 +553,31 @@ def index():
 
                 elif 'download_pdf' in request.form:
                     merged_file_path = save_merged_file(merged_df, 'pdf', title, title_2, note1)
-                    buffer = BytesIO()
-                    with open(merged_file_path, 'rb') as f:
-                        buffer.write(f.read())
-                    buffer.seek(0)
-                    return send_file(buffer, as_attachment=True, download_name='merged_data.pdf',
+                    if not merged_file_path:
+                        flash("Error generating PDF.", "error")
+                        return redirect(url_for('index'))
+                    return send_file(merged_file_path, as_attachment=True, download_name='merged_data.pdf',
                                      mimetype='application/pdf')
 
                 elif 'show_data' in request.form:
-                    return render_template('index.html', tables=[merged_df.to_html(classes='data')],
+                    return render_template('index.html', form=form, tables=[merged_df.to_html(classes='data')],
                                            titles=merged_df.columns.values)
 
-        uploaded_files = os.listdir(app.config['UPLOAD_FOLDER'])
-        merged_files = os.listdir(app.config['MERGED_FOLDER'])
+        # Handle missing files
+        flash("Please upload valid files.", "error")
+        return redirect(url_for('index'))
 
-        return render_template('success.html', uploaded_files=uploaded_files, merged_files=merged_files)
-        #return redirect(url_for('index'))
-
+    # GET request: render page
     uploaded_files = os.listdir(app.config['UPLOAD_FOLDER'])
     merged_files = os.listdir(app.config['MERGED_FOLDER'])
-
-    return render_template('index.html', uploaded_files=uploaded_files, merged_files=merged_files)
+    return render_template('index.html', form=form, uploaded_files=uploaded_files, merged_files=merged_files)
 
 @app.route('/download/<folder>/<filename>', methods=['GET'])
 def download_file(folder, filename):
     folder_path = app.config.get(f'{folder.upper()}_FOLDER')
     file_path = os.path.join(folder_path, filename)
     if os.path.exists(file_path):
-        return send_file(file_path, as_attachment=True)
+        return send_from_directory(file_path)
     else:
         flash(f"The file {filename} does not exist.", "error")
         return redirect(url_for('index'))
