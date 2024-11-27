@@ -46,14 +46,12 @@
             {% if tables %}
             <div class="form-group">
                 <h2>Merged Data</h2>
-                {% autoescape false %}
-                    {% for table in tables %}
-                        {{ table|safe }}
-                    {% endfor %}
-                {% endautoescape %}
+                {% for table in tables %}
+                    {{ table|safe }}
+                {% endfor %}
             </div>
             {% endif %}
-        </form>
+            </form>
 
 
     </div>
